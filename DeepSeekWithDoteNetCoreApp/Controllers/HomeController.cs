@@ -1,32 +1,51 @@
-using DeepSeekWithDoteNetCoreApp.Models;
-using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
+using DeepSeekIntegration.Models;
+using DeepSeekIntegration.Services;
+using Microsoft.AspNetCore.Mvc;
 
-namespace DeepSeekWithDoteNetCoreApp.Controllers
+namespace DeepSeekIntegration.Controllers;
+
+public class HomeController(
+    IDeepSeekService deepSeekService,
+    ILogger<HomeController> logger) : Controller
 {
-    public class HomeController : Controller
+    [HttpGet]
+    public IActionResult Index()
     {
-        private readonly ILogger<HomeController> _logger;
+        return View(new ChatViewModel());
+    }
 
-        public HomeController(ILogger<HomeController> logger)
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Index(ChatViewModel model, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
         {
-            _logger = logger;
+            return View(model);
         }
 
-        public IActionResult Index()
+        var sw = Stopwatch.StartNew();
+
+        try
         {
-            return View();
+            var (reply, totalTokens) = await deepSeekService.AskAsync(
+                model.UserPrompt,
+                model.SystemPrompt,
+                cancellationToken);
+
+            sw.Stop();
+
+            model.AssistantReply = reply;
+            model.TotalTokensUsed = totalTokens;
+            model.ElapsedMilliseconds = sw.ElapsedMilliseconds;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            logger.LogError(ex, "Error calling DeepSeek-V4 endpoint.");
+            model.ErrorMessage = $"Request failed: {ex.Message}";
         }
 
-        public IActionResult Privacy()
-        {
-            return View();
-        }
-
-        [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-        public IActionResult Error()
-        {
-            return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
-        }
+        return View(model);
     }
 }
